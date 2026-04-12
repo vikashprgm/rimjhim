@@ -1,7 +1,8 @@
-# Tauri + React + Typescript
+# Rimjhim is a local first, minimalist, AI-powered note taking app built with  Tauri + React + Typescript
 
-This template should help get you started developing with Tauri, React and Typescript in Vite.
-
-## Recommended IDE Setup
-
-- [VS Code](https://code.visualstudio.com/) + [Tauri](https://marketplace.visualstudio.com/items?itemName=tauri-apps.tauri-vscode) + [rust-analyzer](https://marketplace.visualstudio.com/items?itemName=rust-lang.rust-analyzer)
+# Features - 
+## Do RAG on Notes locally, no internet connection required
+## Type High Quality Notes with powerfull markup tools
+## Fast, Safe and Lightweight
+## Cross Platform
+## Rust Powered Backend
