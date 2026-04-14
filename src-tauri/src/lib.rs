@@ -1,6 +1,6 @@
-use std::{sync::{Arc, Mutex}, vec};
+use std::{ops::Deref, pin::Pin, string, sync::{Arc, Mutex}, vec};
 
-use lancedb::{Connection, Error, connection::ConnectBuilder};
+use lancedb::{Connection, Error, arrow::BoxedRecordBatchReader, connection::ConnectBuilder, data::scannable::Scannable, query::{ExecutableQuery, QueryBase}};
 use ollama_rs::{
     Ollama, 
     generation::{
@@ -9,21 +9,20 @@ use ollama_rs::{
         embeddings::request::EmbeddingsInput,
     }
 };
-use arrow_array::{FixedSizeListArray, Float32Array, Int32Array, RecordBatch,  StringArray};
+use arrow_array::{Array, FixedSizeListArray, Float32Array, Int32Array, RecordBatch, StringArray, ffi_stream::ArrowArrayStreamReader};
 use arrow_schema::{DataType, Field};
+use futures::stream::StreamExt;
+use arrow_array::cast::AsArray;
 
 struct DbState{
     conn: Connection,
 }
-#[tauri::command]
 
 // Add functionality to detect if table exists
 // Add functionality to check model availibility
-async fn store_embeddings(input : String, model: String , state : tauri::State<'_, DbState>)-> Result<String,String>{
+
+pub async fn str_to_embd (input : String, model: String) -> Vec<f32> {
     let ollama = Ollama::default();
-    let table = state.conn.open_table("notes_table").execute().await.map_err(|e| e.to_string())?;
-    let schema  = table.schema().await.map_err(|e| e.to_string())?;
-    
     let embedding_res = ollama.generate_embeddings(
         GenerateEmbeddingsRequest::new(
             model, 
@@ -31,7 +30,17 @@ async fn store_embeddings(input : String, model: String , state : tauri::State<'
         )
     ).await.unwrap();
     let embedding_vector = embedding_res.embeddings.get(0).unwrap();
-    let vector_value = Float32Array::from(embedding_vector.clone());
+    embedding_vector.clone()
+}
+
+#[tauri::command]
+async fn store_embeddings(input : String, model: String , state : tauri::State<'_, DbState>)-> Result<String,String>{
+    let table = state.conn.open_table("notes_table").execute().await.map_err(|e| e.to_string())?;
+    let schema  = table.schema().await.map_err(|e| e.to_string())?;
+    
+    let embedding_vector = str_to_embd(input.clone(), model.clone()).await;
+    let emb_size = embedding_vector.len() as i32;
+    let vector_value = Float32Array::from(embedding_vector);
     
     table.add(RecordBatch::try_new(schema.clone(),vec![
         Arc::new(Int32Array::from(vec![1])),
@@ -39,7 +48,7 @@ async fn store_embeddings(input : String, model: String , state : tauri::State<'
         Arc::new(
             FixedSizeListArray::new(
                 Arc::new(Field::new("item", DataType::Float32, true)),
-                embedding_vector.len() as i32, 
+                emb_size,
                 Arc::new(vector_value.clone()),
                 None
             )
@@ -53,6 +62,38 @@ async fn store_embeddings(input : String, model: String , state : tauri::State<'
     Ok(String::from("Done"))
 }
 
+//convert user query -> vector , search vector in db, get top 5 results;
+#[tauri::command]
+async fn search_embd (slice : String, model : String, state : tauri::State<'_, DbState> ) -> Result<Vec<String>,String> {
+    let table = state.conn.open_table("notes_table").execute().await.unwrap();
+    let embd_vect = str_to_embd(slice, model).await;
+    let mut search_res = table
+        .query()
+        .nearest_to(embd_vect)
+        .map_err(|e | e.to_string())?
+        .limit(5)
+        .execute()
+        .await
+        .map_err(|e | e.to_string())?;
+    
+    let mut ans: Vec<String> = Vec::new();
+    ans.reserve(5);
+    
+    // iterate on vector stream now
+    while let Some(batch) = search_res.next().await {
+        ans.extend( batch
+            .unwrap()
+            .column_by_name("original")
+            .unwrap()
+            .as_string::<i32>()
+            .iter()
+            .flatten()
+            .map(|s| s.to_string())
+        )
+    }
+    Ok(ans)
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let db = tauri::async_runtime::block_on(lancedb::connect("local_lancedb")
@@ -62,7 +103,7 @@ pub fn run() {
     tauri::Builder::default()
         .manage(DbState { conn : db})
         .plugin(tauri_plugin_opener::init())
-        .invoke_handler(tauri::generate_handler![store_embeddings])
+        .invoke_handler(tauri::generate_handler![store_embeddings,search_embd])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
