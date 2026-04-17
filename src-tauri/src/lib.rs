@@ -1,4 +1,4 @@
-use std::{ops::Deref, pin::Pin, string, sync::{Arc, Mutex}, vec};
+use std::{iter, ops::Deref, pin::Pin, str::{Utf8Chunk, Utf8Chunks}, string, sync::{Arc, Mutex}, vec};
 
 use lancedb::{Connection, Error, arrow::BoxedRecordBatchReader, connection::ConnectBuilder, data::scannable::Scannable, query::{ExecutableQuery, QueryBase}};
 use ollama_rs::{
@@ -9,9 +9,9 @@ use ollama_rs::{
         embeddings::request::EmbeddingsInput,
     }
 };
-use arrow_array::{Array, FixedSizeListArray, Float32Array, Int32Array, RecordBatch, StringArray, ffi_stream::ArrowArrayStreamReader};
+use arrow_array::{Array, FixedSizeListArray, Float32Array, Int32Array, RecordBatch, StringArray, ffi_stream::ArrowArrayStreamReader, types::Utf8Type};
 use arrow_schema::{DataType, Field};
-use futures::stream::StreamExt;
+use futures::{TryStreamExt, stream::StreamExt};
 use arrow_array::cast::AsArray;
 
 struct DbState{
@@ -34,7 +34,7 @@ pub async fn str_to_embd (input : String, model: String) -> Vec<f32> {
 }
 
 #[tauri::command]
-async fn store_embeddings(input : String, model: String , state : tauri::State<'_, DbState>)-> Result<String,String>{
+async fn store_embd(input : String, model: String , state : tauri::State<'_, DbState>)-> Result<String,String>{
     let table = state.conn.open_table("notes_table").execute().await.map_err(|e| e.to_string())?;
     let schema  = table.schema().await.map_err(|e| e.to_string())?;
     
@@ -94,6 +94,28 @@ async fn search_embd (slice : String, model : String, state : tauri::State<'_, D
     Ok(ans)
 }
 
+#[tauri::command]
+async fn list_notes (state : tauri::State<'_, DbState>) -> Result<Vec<String>, String> {
+    let table = state.conn.open_table("original").execute().await.map_err(|e| e.to_string())?;
+    let stream = table.query().execute().await.map_err(|e| e.to_string())?;
+    let ref_stream: Vec<RecordBatch> = stream.try_collect().await.map_err(|e| e.to_string())?;
+    
+    let mut ans: Vec<String> = Vec::new();
+
+    while let Some(batch) = ref_stream.iter().next() {
+        let curr = batch
+            .column_by_name("original")
+            .unwrap().as_string::<i32>();
+                
+        for i in 0..curr.len() {
+            ans.push(curr.value(i).to_string());
+        }
+    
+    }
+    Ok(ans)
+}
+
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let db = tauri::async_runtime::block_on(lancedb::connect("local_lancedb")
@@ -103,7 +125,7 @@ pub fn run() {
     tauri::Builder::default()
         .manage(DbState { conn : db})
         .plugin(tauri_plugin_opener::init())
-        .invoke_handler(tauri::generate_handler![store_embeddings,search_embd])
+        .invoke_handler(tauri::generate_handler![store_embd,search_embd,list_notes])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
