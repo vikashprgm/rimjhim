@@ -1,15 +1,14 @@
-use std::{iter, ops::Deref, pin::Pin, str::{Utf8Chunk, Utf8Chunks}, string, sync::{Arc, Mutex}, vec};
+use std::{sync::{Arc}, vec};
 
-use lancedb::{Connection, Error, arrow::BoxedRecordBatchReader, connection::ConnectBuilder, data::scannable::Scannable, query::{ExecutableQuery, QueryBase}};
+use lancedb::{Connection, query::{ExecutableQuery, QueryBase}};
 use ollama_rs::{
     Ollama, 
     generation::{
-        completion::request::GenerationRequest,
         embeddings::request::GenerateEmbeddingsRequest,
         embeddings::request::EmbeddingsInput,
     }
 };
-use arrow_array::{Array, FixedSizeListArray, Float32Array, Int32Array, RecordBatch, StringArray, ffi_stream::ArrowArrayStreamReader, types::Utf8Type};
+use arrow_array::{Array, FixedSizeListArray, Float32Array, Int32Array, RecordBatch, StringArray};
 use arrow_schema::{DataType, Field};
 use futures::{TryStreamExt, stream::StreamExt};
 use arrow_array::cast::AsArray;
@@ -19,18 +18,40 @@ struct DbState{
 }
 
 // Add functionality to detect if table exists
-// Add functionality to check model availibility
+pub async fn is_table() -> bool {
+    todo!()
+}
 
-pub async fn str_to_embd (input : String, model: String) -> Vec<f32> {
+// Add functionality to check model availibility
+pub async fn is_model(model : String) -> bool {
     let ollama = Ollama::default();
+    let avail_mods = ollama.list_local_models().await.unwrap();
+    
+    for i in 0..avail_mods.len(){
+        if avail_mods[i].name == model {
+            return true;
+        }
+    }
+    return false;
+}   
+
+pub async fn str_to_embd (input : String, model: String) -> Result<Vec<f32>,String> {
+    let ollama = Ollama::default();
+    
+    let exists = is_model(model.clone()).await;
+    if !exists {
+        //download model code
+    };
+
     let embedding_res = ollama.generate_embeddings(
         GenerateEmbeddingsRequest::new(
             model, 
             EmbeddingsInput::Single(input.clone())
         )
     ).await.unwrap();
+    
     let embedding_vector = embedding_res.embeddings.get(0).unwrap();
-    embedding_vector.clone()
+    Ok(embedding_vector.clone())
 }
 
 #[tauri::command]
@@ -38,7 +59,7 @@ async fn store_embd(input : String, model: String , state : tauri::State<'_, DbS
     let table = state.conn.open_table("notes_table").execute().await.map_err(|e| e.to_string())?;
     let schema  = table.schema().await.map_err(|e| e.to_string())?;
     
-    let embedding_vector = str_to_embd(input.clone(), model.clone()).await;
+    let embedding_vector = str_to_embd(input.clone(), model.clone()).await.map_err(|e|e.to_string())?;
     let emb_size = embedding_vector.len() as i32;
     let vector_value = Float32Array::from(embedding_vector);
     
@@ -66,7 +87,7 @@ async fn store_embd(input : String, model: String , state : tauri::State<'_, DbS
 #[tauri::command]
 async fn search_embd (slice : String, model : String, state : tauri::State<'_, DbState> ) -> Result<Vec<String>,String> {
     let table = state.conn.open_table("notes_table").execute().await.unwrap();
-    let embd_vect = str_to_embd(slice, model).await;
+    let embd_vect = str_to_embd(slice, model).await.map_err(|e|e.to_string())?;
     let mut search_res = table
         .query()
         .nearest_to(embd_vect)
