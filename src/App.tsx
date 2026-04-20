@@ -1,77 +1,46 @@
 import { useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { SimpleEditor } from "./components/tiptap-templates/simple/simple-editor";
+import { Titlebar } from "./components/Titlebar";
+import { SidebarProvider } from "./components/ui/sidebar";
+import { SidebarTrigger } from "./components/ui/sidebar";
+import { AppSidebar } from "./components/app-sidebar";
+
 import "./App.css";
+import { ResizeHandles } from "./components/ResizeHandles";
 
 function App() {
   const [selectedModel, setSelectedModel] = useState<string>("gemma3:270m");
   const [embmodel,setEmbmodel] = useState<string>("snowflake-arctic-embed:22m")
   const [prompt, setPrompt] = useState<string>("");
-  const [response, setResponse] = useState<string>("");
+  const [response, setResponse] = useState<boolean>(false);
   const [loading, setLoading] = useState<boolean>(false);
 
-  async function handleAsk() {
-    if (!prompt.trim() || !selectedModel) return;
-    setLoading(true);
-    setResponse("");
-    try {
-      const result = await invoke<string>("ask", { model: selectedModel, prompt });
-      setResponse(result);
-    } catch (e) {
-      setResponse(`Error: ${e}`);
-    } finally {
-      setLoading(false);
-    }
-  }
 
-  async function gen_embed () {
+  async function findModel() {
     try{
-      const res = await invoke<string>("generate_embedding" , { input : "Hello World", model : embmodel })
+      const res = await invoke<boolean> ("is_model" , {model: selectedModel});
       setResponse(res);
     }
     catch (e){
-      setResponse(`Error: ${e}`);
     }
   }
 
-  return (
-    <div>
-      <section style={{ marginTop: 24 }}>
-        <label><strong>Prompt</strong></label>
-        <textarea
-          rows={4}
-          value={prompt}
-          onChange={e => setPrompt(e.target.value)}
-          placeholder="Ask something…"
-          style={{ background:"#000000", display: "block", width: "100%", marginTop: 6, padding: "8px", boxSizing: "border-box", color:"#FFFFFF" }}
-        />
-        <button
-          onClick={handleAsk}
-          disabled={loading || !selectedModel}
-          style={{ marginTop: 8 }}
-        >
-          {loading ? "Thinking…" : "Send"}
-        </button>
-      </section>
+return (
+  <div className="app-container" style={{ display: "flex", flexDirection: "column", height: "100vh" }}>
+    <ResizeHandles/>
+    <Titlebar title="Untitled Note" />
+    <SidebarProvider style={{ flex: 1, overflow: "hidden",minHeight: "0" }}>
+      <AppSidebar />
+      <main className="overflow-y-hidden">
+        <SidebarTrigger />
+        <SimpleEditor />
+      </main>
+    </SidebarProvider>
 
-      {response && (
-        <section style={{ marginTop: 24,}}>
-          <label><strong>Response</strong></label>
-          <pre style={{
-            background: "#000000", padding: 12, borderRadius: 6,
-            whiteSpace: "pre-wrap", wordBreak: "break-word", marginTop: 6, 
-          }}>
-            {response}
-          </pre>
-        </section>
-      )}
+  </div>
+);
 
-      <div>
-        <button onClick={gen_embed}>
-          Click to Generate Embedding
-        </button>
-      </div>
-    </div>
-  );
 }
 
 export default App;

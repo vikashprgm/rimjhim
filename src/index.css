@@ -1,0 +1,3 @@
+@import '<path-to-styles>/_variables.scss';
+@import '<path-to-styles>/_keyframe-animations.scss';
+@import "tailwindcss";

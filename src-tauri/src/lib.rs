@@ -23,7 +23,8 @@ pub async fn is_table() -> bool {
 }
 
 // Add functionality to check model availibility
-pub async fn is_model(model : String) -> bool {
+#[tauri::command]
+async fn is_model(model : String) -> bool {
     let ollama = Ollama::default();
     let avail_mods = ollama.list_local_models().await.unwrap();
     
@@ -33,7 +34,7 @@ pub async fn is_model(model : String) -> bool {
         }
     }
     return false;
-}   
+}
 
 pub async fn str_to_embd (input : String, model: String) -> Result<Vec<f32>,String> {
     let ollama = Ollama::default();
@@ -146,7 +147,12 @@ pub fn run() {
     tauri::Builder::default()
         .manage(DbState { conn : db})
         .plugin(tauri_plugin_opener::init())
-        .invoke_handler(tauri::generate_handler![store_embd,search_embd,list_notes])
+        .invoke_handler(tauri::generate_handler![
+            store_embd,
+            search_embd,
+            list_notes, 
+            is_model
+            ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
