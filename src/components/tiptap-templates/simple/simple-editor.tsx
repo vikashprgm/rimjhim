@@ -75,7 +75,7 @@ import "@/components/tiptap-templates/simple/simple-editor.scss"
 
 import content from "@/components/tiptap-templates/simple/data/content.json"
 
-const MainToolbarContent = ({
+const   MainToolbarContent = ({
   onHighlighterClick,
   onLinkClick,
   isMobile,
@@ -86,7 +86,7 @@ const MainToolbarContent = ({
 }) => {
   return (
     <>
-      <Spacer />
+      <Spacer/>
 
       <ToolbarGroup>
         <UndoRedoButton action="undo" />
@@ -146,10 +146,10 @@ const MainToolbarContent = ({
       <Spacer />
 
       {isMobile && <ToolbarSeparator />}
-
+{/* 
       <ToolbarGroup>
         <ThemeToggle />
-      </ToolbarGroup>
+      </ToolbarGroup> */}
     </>
   )
 }

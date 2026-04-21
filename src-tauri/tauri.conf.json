@@ -14,7 +14,8 @@
       {
         "decorations" : false,
         "minWidth": 480,
-        "minHeight": 320
+        "minHeight": 320,
+        "zoomHotkeysEnabled": false
       }
     ],
     "security": {

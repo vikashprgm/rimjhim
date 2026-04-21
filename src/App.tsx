@@ -8,6 +8,7 @@ import { AppSidebar } from "./components/app-sidebar";
 
 import "./App.css";
 import { ResizeHandles } from "./components/ResizeHandles";
+import { ThemeToggle } from "./components/tiptap-templates/simple/theme-toggle";
 
 function App() {
   const [selectedModel, setSelectedModel] = useState<string>("gemma3:270m");
@@ -33,11 +34,13 @@ return (
     <SidebarProvider style={{ flex: 1, overflow: "hidden",minHeight: "0" }}>
       <AppSidebar />
       <main className="overflow-y-hidden">
-        <SidebarTrigger />
+        <div className="flex items-center">
+          <SidebarTrigger size="default"/>
+          <ThemeToggle/>
+        </div>
         <SimpleEditor />
       </main>
     </SidebarProvider>
-
   </div>
 );
 
