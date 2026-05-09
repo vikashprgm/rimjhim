@@ -1,5 +1,4 @@
 "use client"
-
 import {
   AudioWaveform,
   Blocks,
@@ -17,8 +16,8 @@ import {
 export const data = {
     navMain: [
     { title: "Search",  url: "#", icon: <Search/> },
-    { title: "Ask AI",  url: "#", icon: <Sparkles /> },
-    { title: "Home",    url: "#", icon: <Home />, isActive: true },
+    { title: "Ask AI",  url: "/askai", icon: <Sparkles /> },
+    { title: "Home",    url: "/", icon: <Home /> },
     { title: "Inbox",   url: "#", icon: <Inbox />, badge: "10" },
   ],
   navSecondary: [

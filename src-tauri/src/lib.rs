@@ -3,15 +3,13 @@ use std::{sync::{Arc}, vec};
 use lancedb::{Connection, query::{ExecutableQuery, QueryBase}};
 use ollama_rs::{
     Ollama, 
-    generation::{
-        embeddings::request::GenerateEmbeddingsRequest,
-        embeddings::request::EmbeddingsInput,
-    }
+    generation::embeddings::request::{EmbeddingsInput, GenerateEmbeddingsRequest}, models::{LocalModel, pull::PullModelStatus}
 };
 use arrow_array::{Array, FixedSizeListArray, Float32Array, Int32Array, RecordBatch, StringArray};
 use arrow_schema::{DataType, Field};
 use futures::{TryStreamExt, stream::StreamExt};
 use arrow_array::cast::AsArray;
+use tauri::{Emitter, Window};
 
 struct DbState{
     conn: Connection,
@@ -36,11 +34,40 @@ async fn is_model(model : String) -> bool {
     return false;
 }
 
+#[tauri::command]
+async fn pull_model(model: String, window: Window) -> Result<(), String> {
+    let ollama = Ollama::default();
+
+    let mut stream = ollama
+        .pull_model_stream(model, false)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    while let Some(res) = stream.next().await {
+        match res {
+            Ok(status) => {
+                window.emit("pull-progress", status).map_err(|e| e.to_string())?;
+            }
+            Err(e) => return Err(e.to_string()),
+        }
+    }
+
+    Ok(())
+}
+
+#[tauri::command]
+async fn list_models() -> Result<Vec<LocalModel>,String> {
+    let ollama = Ollama::default();
+    let models = ollama.list_local_models().await.map_err(|e|e.to_string());
+    models
+}
+
 pub async fn str_to_embd (input : String, model: String) -> Result<Vec<f32>,String> {
     let ollama = Ollama::default();
     
     let exists = is_model(model.clone()).await;
     if !exists {
+        return Err(format!("Model '{}' not found. Pull it first.", model));
         //download model code
     };
 
@@ -54,7 +81,7 @@ pub async fn str_to_embd (input : String, model: String) -> Result<Vec<f32>,Stri
     let embedding_vector = embedding_res.embeddings.get(0).unwrap();
     Ok(embedding_vector.clone())
 }
-
+// converts a string and stores in db
 #[tauri::command]
 async fn store_embd(input : String, model: String , state : tauri::State<'_, DbState>)-> Result<String,String>{
     let table = state.conn.open_table("notes_table").execute().await.map_err(|e| e.to_string())?;
@@ -87,7 +114,7 @@ async fn store_embd(input : String, model: String , state : tauri::State<'_, DbS
 //convert user query -> vector , search vector in db, get top 5 results;
 #[tauri::command]
 async fn search_embd (slice : String, model : String, state : tauri::State<'_, DbState> ) -> Result<Vec<String>,String> {
-    let table = state.conn.open_table("notes_table").execute().await.unwrap();
+    let table = state.conn.open_table("notes_table").execute().await.map_err(|e| e.to_string())?;
     let embd_vect = str_to_embd(slice, model).await.map_err(|e|e.to_string())?;
     let mut search_res = table
         .query()
@@ -104,7 +131,7 @@ async fn search_embd (slice : String, model : String, state : tauri::State<'_, D
     // iterate on vector stream now
     while let Some(batch) = search_res.next().await {
         ans.extend( batch
-            .unwrap()
+            .map_err(|e| e.to_string())?
             .column_by_name("original")
             .unwrap()
             .as_string::<i32>()
@@ -151,7 +178,9 @@ pub fn run() {
             store_embd,
             search_embd,
             list_notes, 
-            is_model
+            is_model,
+            list_models,
+            pull_model,
             ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
